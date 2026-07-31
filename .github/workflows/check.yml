@@ -3,8 +3,10 @@ name: Package check
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   check:
@@ -12,6 +14,74 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Guard published hosted installer source
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          import yaml
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          if Path("install.sh").exists():
+              fail("Repo-local install.sh must not exist; Pages publishes a verified RigSignal release asset.")
+
+          with Path(".github/workflows/publish.yml").open() as workflow_file:
+              workflow = yaml.safe_load(workflow_file)
+
+          try:
+              steps = workflow["jobs"]["publish"]["steps"]
+          except (KeyError, TypeError):
+              fail("publish.yml must define jobs.publish.steps.")
+
+          installer_version = workflow.get("env", {}).get("INSTALLER_VERSION", "")
+          if "0.3.1" not in str(installer_version):
+              fail("publish.yml must default INSTALLER_VERSION to 0.3.1.")
+
+          try:
+              workflow_events = workflow.get(True, workflow.get("on", {}))
+              dispatch_input = workflow_events["workflow_dispatch"]["inputs"]["installer_version"]
+          except (KeyError, TypeError):
+              fail("publish.yml must expose the installer_version workflow-dispatch input.")
+          if str(dispatch_input.get("default")) != "0.3.1":
+              fail("installer_version must default to 0.3.1.")
+
+          release_checkout = any(
+              step.get("with", {}).get("repository") == "MathewRJ/RigSignal"
+              for step in steps if isinstance(step, dict)
+          )
+          if release_checkout:
+              fail("publish.yml must download the published RigSignal release asset, not check out its repository.")
+
+          def step_index(fragment):
+              for index, step in enumerate(steps):
+                  if fragment in str(step.get("run", "")):
+                      return index
+              fail(f"publish.yml is missing required installer gate: {fragment}")
+
+          release_view = step_index('gh release view "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal')
+          download = step_index('gh release download "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal')
+          checksum = step_index("sha256sum -c install.sh.sha256")
+          attestation = step_index("gh attestation verify install.sh -R MathewRJ/RigSignal")
+          copy = step_index("install -m 755 installer-release/install.sh dist/install.sh")
+          compare = step_index("cmp -s installer-release/install.sh dist/install.sh")
+
+          download_run = str(steps[download].get("run", ""))
+          if "MathewRJ/RigSignal" not in download_run or "-p install.sh" not in download_run or "-p install.sh.sha256" not in download_run:
+              fail("publish.yml must download install.sh and install.sh.sha256 from the RigSignal release.")
+          if not release_view < download < checksum < attestation < copy < compare:
+              fail("publish.yml installer gates must run in release-view, download, checksum, attestation, copy, and cmp order.")
+
+          upload = next((index for index, step in enumerate(steps)
+                         if step.get("uses") == "actions/upload-pages-artifact@v3"), None)
+          if upload is None or compare + 1 != upload:
+              fail("The installer cmp gate must run immediately before the Pages artifact upload.")
+          PY
 
       - name: Install elastic-package
         run: |

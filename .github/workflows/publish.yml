@@ -9,6 +9,14 @@ on:
         description: 'Package version (e.g. 0.1.1 — without leading v)'
         required: true
         type: string
+      installer_version:
+        description: 'RigSignal release version supplying the hosted installer (without leading v)'
+        required: false
+        default: '0.3.1'
+        type: string
+
+env:
+  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.1' }}
 
 permissions:
   contents: write
@@ -72,11 +80,47 @@ jobs:
             "${{ steps.ver.outputs.version }}" \
             "https://MathewRJ.github.io/RigSignal-Integration"
 
-      - name: Copy install script to dist
-        run: cp install.sh dist/install.sh
+      - name: Verify RigSignal installer release is published
+        run: |
+          if ! gh release view "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal >/dev/null; then
+            echo "::error::RigSignal release v${INSTALLER_VERSION} not yet published; the hosted installer cannot be updated until the release candidate is cut (S8)."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download published RigSignal installer assets
+        run: |
+          gh release download "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal \
+            -p install.sh \
+            -p install.sh.sha256 \
+            -D installer-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify published installer checksum
+        working-directory: installer-release
+        run: sha256sum -c install.sh.sha256
+
+      # REQUIRED: RigSignal S8 must publish artifact attestations for these release assets.
+      - name: Verify published installer attestation
+        working-directory: installer-release
+        run: |
+          if ! gh attestation verify install.sh -R MathewRJ/RigSignal; then
+            echo "::error::RigSignal release v${INSTALLER_VERSION} installer lacks a verifiable artifact attestation; S8 must publish release asset attestations."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Copy published installer to dist
+        run: install -m 755 installer-release/install.sh dist/install.sh
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+
+      - name: Verify Pages installer matches published release asset
+        run: cmp -s installer-release/install.sh dist/install.sh
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
