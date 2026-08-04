@@ -12,7 +12,7 @@ on:
       installer_version:
         description: 'RigSignal release version supplying the hosted installer (without leading v)'
         required: false
-        default: '0.3.1'
+        default: '0.3.2'
         type: string
 
 env:
