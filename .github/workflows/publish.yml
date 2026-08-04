@@ -16,7 +16,7 @@ on:
         type: string
 
 env:
-  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.1' }}
+  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.2' }}
 
 permissions:
   contents: write
