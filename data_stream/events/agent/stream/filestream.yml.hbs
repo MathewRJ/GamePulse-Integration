@@ -1,6 +1,10 @@
 paths:
   - {{spool_dir}}/rigsignal-events-*.ndjson
 exclude_files: ['.tmp$', '.gz$']
+prospector.scanner.fingerprint:
+  enabled: true
+  offset: 0
+  length: 1024
 tags: {{to_json tags}}
 parsers:
   - ndjson:

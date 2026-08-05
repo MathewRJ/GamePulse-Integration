@@ -1,3 +1,10 @@
+- version: "0.5.1"
+  changes:
+    - description: >
+        Pin filestream fingerprint identity settings for every data stream so
+        future Beats defaults cannot change file identity semantics.
+      type: bugfix
+      link: https://github.com/MathewRJ/RigSignal-Integration/issues/5
 - version: "0.5.0"
   changes:
     - description: >
