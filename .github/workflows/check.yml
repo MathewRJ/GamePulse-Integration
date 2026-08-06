@@ -39,17 +39,25 @@ jobs:
           except (KeyError, TypeError):
               fail("publish.yml must define jobs.publish.steps.")
 
-          installer_version = workflow.get("env", {}).get("INSTALLER_VERSION", "")
-          if "0.3.1" not in str(installer_version):
-              fail("publish.yml must default INSTALLER_VERSION to 0.3.1.")
-
           try:
               workflow_events = workflow.get(True, workflow.get("on", {}))
               dispatch_input = workflow_events["workflow_dispatch"]["inputs"]["installer_version"]
           except (KeyError, TypeError):
               fail("publish.yml must expose the installer_version workflow-dispatch input.")
-          if str(dispatch_input.get("default")) != "0.3.1":
-              fail("installer_version must default to 0.3.1.")
+
+          EXPECTED_INSTALLER_DEFAULT = "0.3.3"
+          default_installer_version = dispatch_input.get("default")
+          if not isinstance(default_installer_version, str) or not default_installer_version:
+              fail("installer_version default must be a non-empty string.")
+          if default_installer_version != EXPECTED_INSTALLER_DEFAULT:
+              fail(f"installer_version must default to {EXPECTED_INSTALLER_DEFAULT}.")
+
+          installer_version = workflow.get("env", {}).get("INSTALLER_VERSION")
+          if not isinstance(installer_version, str):
+              fail("INSTALLER_VERSION env must be a string expression.")
+          expected_fallback = f"inputs.installer_version || '{default_installer_version}'"
+          if expected_fallback not in installer_version:
+              fail("INSTALLER_VERSION must fall back to the installer_version dispatch default.")
 
           release_checkout = any(
               step.get("with", {}).get("repository") == "MathewRJ/RigSignal"

@@ -12,11 +12,11 @@ on:
       installer_version:
         description: 'RigSignal release version supplying the hosted installer (without leading v)'
         required: false
-        default: '0.3.2'
+        default: '0.3.3'
         type: string
 
 env:
-  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.2' }}
+  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.3' }}
 
 permissions:
   contents: write
