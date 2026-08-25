@@ -1,8 +1,12 @@
 name: Publish EPR to GitHub Pages
 
+# Dispatch-only by §10.3 owner ruling (2026-08-06, GO-LEDGER) + C-3 carry
+# (cmt-2026-08-25-rigsignal-tail-1): no v* tag trigger — a tag-push run both
+# created a forbidden GH release path and could stall at the github-pages
+# environment gate holding the `pages` concurrency group (18.4-day
+# head-of-line block, §9.3 gate finding 2026-08-25). v* tags still trigger
+# check.yml only.
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
@@ -19,7 +23,7 @@ env:
   INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.3' }}
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -40,13 +44,7 @@ jobs:
 
       - name: Derive version
         id: ver
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG="${GITHUB_REF_NAME}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version
         run: |
@@ -130,13 +128,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: pages
         uses: actions/deploy-pages@v4
-
-      - name: Create GitHub Release with zip
-        if: github.event_name == 'push'
-        run: |
-          ZIP="build/packages/rigsignal-${{ steps.ver.outputs.version }}.zip"
-          gh release create "v${{ steps.ver.outputs.version }}" "${ZIP}" \
-            --title "RigSignal Integration v${{ steps.ver.outputs.version }}" \
-            --notes "Integration package for Elastic Fleet. Upload \`$(basename ${ZIP})\` via **Fleet → Integrations → Upload a package** on Elastic Cloud Serverless."
-        env:
-          GH_TOKEN: ${{ github.token }}
