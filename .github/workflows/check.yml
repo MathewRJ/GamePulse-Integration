@@ -105,3 +105,13 @@ jobs:
 
       - name: Check package
         run: elastic-package check
+
+      # Added 2026-08-26 alongside deleting RigSignal's agent-ci.yml, whose
+      # elastic-package jobs were structurally inert there (they gated on a root
+      # manifest.yml that only exists in THIS repo, so every step was skipped).
+      # `test static` needs no running stack, so it belongs in this fast gate.
+      # NOT added: `test asset` and `test pipeline`, which require a booted
+      # Elastic stack. Those have never run in either repo and remain a
+      # consciously-accepted coverage gap rather than a disguised green check.
+      - name: Static package tests
+        run: elastic-package test static
