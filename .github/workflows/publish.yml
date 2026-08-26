@@ -44,13 +44,17 @@ jobs:
 
       - name: Derive version
         id: ver
-        run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: printf 'version=%s\n' "$INPUT_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           MANIFEST_VERSION=$(sed -n 's/^version:[[:space:]]*//p' manifest.yml)
-          if [ "$MANIFEST_VERSION" != "${{ steps.ver.outputs.version }}" ]; then
-            echo "::error::manifest.yml version ($MANIFEST_VERSION) does not match publish version (${{ steps.ver.outputs.version }}). Update manifest.yml or use the matching tag/dispatch version."
+          if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+            echo "::error::manifest.yml version ($MANIFEST_VERSION) does not match publish version ($VERSION). Update manifest.yml or use the matching tag/dispatch version."
             exit 1
           fi
 
@@ -73,9 +77,11 @@ jobs:
         run: pip install pyyaml --quiet
 
       - name: Generate EPR index
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           python scripts/generate-epr-index.py \
-            "${{ steps.ver.outputs.version }}" \
+            "$VERSION" \
             "https://MathewRJ.github.io/RigSignal-Integration"
 
       - name: Verify RigSignal installer release is published
