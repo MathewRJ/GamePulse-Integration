@@ -15,12 +15,11 @@ on:
         type: string
       installer_version:
         description: 'RigSignal release version supplying the hosted installer (without leading v)'
-        required: false
-        default: '0.3.3'
+        required: true
         type: string
 
 env:
-  INSTALLER_VERSION: ${{ inputs.installer_version || '0.3.3' }}
+  INSTALLER_VERSION: ${{ inputs.installer_version }}
 
 permissions:
   contents: read
@@ -42,10 +41,10 @@ jobs:
     steps:
       - name: Verify publish ref
         env:
-          GITHUB_REF: ${{ github.ref }}
+          PUBLISH_REF: ${{ github.ref }}
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Refusing to publish from ref $GITHUB_REF; expected refs/heads/main."
+          if [ "$PUBLISH_REF" != "refs/heads/main" ]; then
+            echo "::error::Refusing to publish from ref $PUBLISH_REF; expected refs/heads/main."
             exit 1
           fi
 
@@ -55,7 +54,12 @@ jobs:
         id: ver
         env:
           INPUT_VERSION: ${{ inputs.version }}
-        run: printf 'version=%s\n' "$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "$INPUT_VERSION" == *$'\n'* ]] || ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' <<<"$INPUT_VERSION"; then
+            echo "::error::version must be SemVer without leading v"
+            exit 1
+          fi
+          printf 'version=%s\n' "$INPUT_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version
         env:
@@ -80,7 +84,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build package
-        run: elastic-package build
+        run: |
+          # elastic-package v0.124.0 does not consume .elastic-package-ignore;
+          # internal/files/copy.go hardcodes its skip list. This stash/EXIT trap
+          # is the control that excludes these files from the package. Do not remove
+          # it believing .elastic-package-ignore protects the zip.
+          STASH_DIR=$(mktemp -d)
+          restore_internal_files() {
+            mv "$STASH_DIR/.github" .github || true
+            mv "$STASH_DIR/tasks" tasks || true
+            mv "$STASH_DIR/scripts" scripts || true
+            rmdir "$STASH_DIR" || true
+          }
+          trap restore_internal_files EXIT
+          mv .github "$STASH_DIR/.github"
+          mv tasks "$STASH_DIR/tasks"
+          mv scripts "$STASH_DIR/scripts"
+          elastic-package build
 
       - name: Install PyYAML
         run: pip install pyyaml --quiet
