@@ -20,7 +20,10 @@ jobs:
           python3 -m pip install --quiet pyyaml
           python3 - <<'PY'
           from pathlib import Path
+          import os
+          import subprocess
           import sys
+          import tempfile
 
           import yaml
 
@@ -45,19 +48,16 @@ jobs:
           except (KeyError, TypeError):
               fail("publish.yml must expose the installer_version workflow-dispatch input.")
 
-          EXPECTED_INSTALLER_DEFAULT = "0.3.3"
-          default_installer_version = dispatch_input.get("default")
-          if not isinstance(default_installer_version, str) or not default_installer_version:
-              fail("installer_version default must be a non-empty string.")
-          if default_installer_version != EXPECTED_INSTALLER_DEFAULT:
-              fail(f"installer_version must default to {EXPECTED_INSTALLER_DEFAULT}.")
+          if dispatch_input.get("required") is not True:
+              fail("installer_version must be required.")
+          if "default" in dispatch_input:
+              fail("installer_version must not define a default.")
 
           installer_version = workflow.get("env", {}).get("INSTALLER_VERSION")
-          if not isinstance(installer_version, str):
-              fail("INSTALLER_VERSION env must be a string expression.")
-          expected_fallback = f"inputs.installer_version || '{default_installer_version}'"
-          if expected_fallback not in installer_version:
-              fail("INSTALLER_VERSION must fall back to the installer_version dispatch default.")
+          expression_open = "$" + "{{"
+          expression_close = "}}"
+          if installer_version != f"{expression_open} inputs.installer_version {expression_close}":
+              fail("INSTALLER_VERSION must use installer_version directly without a fallback.")
 
           release_checkout = any(
               step.get("with", {}).get("repository") == "MathewRJ/RigSignal"
@@ -66,11 +66,62 @@ jobs:
           if release_checkout:
               fail("publish.yml must download the published RigSignal release asset, not check out its repository.")
 
+          publish_ref = next((step for step in steps
+                              if step.get("name") == "Verify publish ref"), None)
+          if not isinstance(publish_ref, dict):
+              fail("publish.yml must define the Verify publish ref step.")
+          if any(name.startswith("GITHUB_") for name in publish_ref.get("env", {})):
+              fail("Verify publish ref must not bind a reserved GITHUB_* env name.")
+          if publish_ref.get("env", {}).get("PUBLISH_REF") != f"{expression_open} github.ref {expression_close}":
+              fail("Verify publish ref must bind github.ref as PUBLISH_REF.")
+
           def step_index(fragment):
               for index, step in enumerate(steps):
                   if fragment in str(step.get("run", "")):
                       return index
               fail(f"publish.yml is missing required installer gate: {fragment}")
+
+          build_step = next((step for step in steps
+                             if step.get("name") == "Build package"), None)
+          if not isinstance(build_step, dict):
+              fail("publish.yml must define the Build package step.")
+          build_run = build_step.get("run")
+          if not isinstance(build_run, str):
+              fail("Build package must run a shell script.")
+          required_build_fragments = (
+              "STASH_DIR=$(mktemp -d)",
+              "trap restore_internal_files EXIT",
+              'mv .github "$STASH_DIR/.github"',
+              'mv tasks "$STASH_DIR/tasks"',
+              'mv scripts "$STASH_DIR/scripts"',
+          )
+          for fragment in required_build_fragments:
+              if fragment not in build_run:
+                  fail(f"Build package must retain the stash/EXIT-trap control: {fragment}")
+
+          derive_version = next((step for step in steps
+                                 if step.get("name") == "Derive version"), None)
+          if not isinstance(derive_version, dict):
+              fail("publish.yml must define the Derive version step.")
+          derive_version_run = derive_version.get("run")
+          if not isinstance(derive_version_run, str):
+              fail("Derive version must run a shell script.")
+          if "grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$'" not in derive_version_run:
+              fail("Derive version must use the anchored SemVer validation regex.")
+
+          def version_result(value):
+              with tempfile.NamedTemporaryFile() as output:
+                  env = os.environ | {"INPUT_VERSION": value, "GITHUB_OUTPUT": output.name}
+                  return subprocess.run(["bash", "-e", "-c", derive_version_run], env=env,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+
+          for invalid_version in ("", "v0.3.5", "0.3", "0.3.5junk", " 0.3.5", "0.3.5 ",
+                                  "0.3.5\n0.3.6", "0.3.5;x", "`x`", "$(x)"):
+              if version_result(invalid_version) == 0:
+                  fail(f"Derive version must reject {invalid_version!r}.")
+          for valid_version in ("0.3.5", "0.3.5-rc.1"):
+              if version_result(valid_version) != 0:
+                  fail(f"Derive version must accept {valid_version!r}.")
 
           release_view = step_index('gh release view "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal')
           download = step_index('gh release download "v${INSTALLER_VERSION}" -R MathewRJ/RigSignal')

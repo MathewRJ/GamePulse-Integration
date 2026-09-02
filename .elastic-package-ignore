@@ -1,3 +1,4 @@
+# Not consumed by elastic-package v0.124.0; retained only to document packaging intent.
 # Exclude archive directories (legacy code and docs, not part of integration)
 archive
 archive/
@@ -30,6 +31,10 @@ src
 src/
 
 # Exclude development-only files
+.github
+.github/
+tasks
+tasks/
 tools
 scripts
 Makefile
