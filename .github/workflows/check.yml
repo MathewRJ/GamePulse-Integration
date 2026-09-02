@@ -54,7 +54,9 @@ jobs:
               fail("installer_version must not define a default.")
 
           installer_version = workflow.get("env", {}).get("INSTALLER_VERSION")
-          if installer_version != "${{ inputs.installer_version }}":
+          expression_open = "$" + "{{"
+          expression_close = "}}"
+          if installer_version != f"{expression_open} inputs.installer_version {expression_close}":
               fail("INSTALLER_VERSION must use installer_version directly without a fallback.")
 
           release_checkout = any(
@@ -70,7 +72,7 @@ jobs:
               fail("publish.yml must define the Verify publish ref step.")
           if any(name.startswith("GITHUB_") for name in publish_ref.get("env", {})):
               fail("Verify publish ref must not bind a reserved GITHUB_* env name.")
-          if publish_ref.get("env", {}).get("PUBLISH_REF") != "${{ github.ref }}":
+          if publish_ref.get("env", {}).get("PUBLISH_REF") != f"{expression_open} github.ref {expression_close}":
               fail("Verify publish ref must bind github.ref as PUBLISH_REF.")
 
           def step_index(fragment):
